@@ -194,7 +194,7 @@ class Consolidation:
         self.dist_data = dist_data[['Load_full_add', 'Delivery_full_add', 'Load_Coord', 'Del_Coord', 'Distance_km', 'Load_lat', 'Load_lon', 'Delivery_lat', 'Delivery_lon']].drop_duplicates()
         self.load_country = load_country
         self.del_country = del_country
-        self.gmaps = googlemaps.Client(key=api_key)
+        # self.gmaps = googlemaps.Client(key=api_key)
     
     def get_clean_data(self):
         df_clean = self.df.copy()
@@ -437,7 +437,8 @@ def main():
         
         
         # Consolidation calculations
-        api_key = "AIzaSyCdKK7F58zXrP4w1_aE-DeI6oxLbgvhAwI"
+        # api_key = "AIzaSyCdKK7F58zXrP4w1_aE-DeI6oxLbgvhAwI"
+        api_key = 'NOT REQD'
         consolidator = Consolidation(df, rate_df, dist_data, load_country, del_country, api_key)
 
 
