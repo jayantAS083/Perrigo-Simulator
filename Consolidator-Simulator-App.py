@@ -199,7 +199,7 @@ def plot_result(inbound_cost, stor_handling, outbound_cost, existing_cost):
     fig.add_trace(go.Bar(
         x=['Total New Cost'],  # Same category for stacking
         y=[stor_handling],  # Storage handling cost value
-        name='Storage Handling',
+        name='Storage/Handling Cost',
         marker_color='#A3BE8C',  # Green for storage handling
         text=[stor_handling],  # Add storage handling cost label
         textposition='inside',  # Show text inside the bar
