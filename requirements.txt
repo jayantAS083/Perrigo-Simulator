@@ -1,0 +1,11 @@
+pandas
+plotly
+pycountry
+numpy
+geopy
+googlemaps
+scgraph==1.2.0
+statsmodels
+streamlit
+streamlit-aggrid
+openpyxl
