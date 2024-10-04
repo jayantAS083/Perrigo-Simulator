@@ -9,3 +9,5 @@ statsmodels
 streamlit
 streamlit-aggrid
 openpyxl
+streamlit_folium
+folium
