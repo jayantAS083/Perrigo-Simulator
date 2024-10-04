@@ -92,7 +92,8 @@ def plot_interactive_map(df):
 
     # Finally, render the updated map with all markers (Load, Delivery, and clicked location)
     st_folium(st.session_state.map, width=0.1, height=0.1,key='map')
-
+    if st.session_state.clicked_location==None:
+        return 0.0,0.0
     return st.session_state.clicked_location
 
 
