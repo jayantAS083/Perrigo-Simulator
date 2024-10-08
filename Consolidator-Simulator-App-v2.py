@@ -384,7 +384,7 @@ def main():
     icon = Image.open('logo1.png')
     image = Image.open("logo2.png")
     st.set_page_config(
-    page_title="Green Field Simulator",
+    page_title="Perrigo Consolidator Tool",
     page_icon=icon,  # Use your image file or provide a URL
     layout="wide",
     initial_sidebar_state="expanded",
