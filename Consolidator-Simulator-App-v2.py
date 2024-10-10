@@ -8,6 +8,7 @@ import ast
 from streamlit_folium import st_folium
 import folium
 from PIL import Image
+from st_aggrid import AgGrid, GridOptionsBuilder
 
 def str_to_tuple(coord_str):
     return ast.literal_eval(coord_str)
@@ -41,40 +42,36 @@ def plot_interactive_map(df):
                 icon=folium.Icon(color="red")
             ).add_to(st.session_state.map)
 
-    # Render the existing map and capture clicked locations
+
     map_data = st_folium(st.session_state.map, width=700, height=500)
 
-    # Debugging: Print map data
-    # st.write("Map Data:", map_data)  # Use st.write instead of print for Streamlit
 
-    # Handle marker for the last clicked location
+
     if map_data and 'last_clicked' in map_data:
         last_clicked = map_data['last_clicked']
 
-        # Check if the last_clicked contains lat and lng
+
         if last_clicked and 'lat' in last_clicked and 'lng' in last_clicked:
             lat = last_clicked['lat']
             lon = last_clicked['lng']
 
-            # Update clicked location in session state
             st.session_state.clicked_location = (lat, lon)
 
-            # Clear previous markers from the map (except Load and Delivery markers)
+
             st.session_state.map = folium.Map(location=center_coordinates, zoom_start=zoom_level,key='map')  # Reinitialize the map
 
-            # Re-add Load and Delivery markers
+
             for i, row in df.iterrows():
                 load_lat, load_lon = str_to_tuple(row['Load_Coord'])
                 del_lat, del_lon = str_to_tuple(row['Del_Coord'])
 
-                # Add Load marker
                 folium.Marker(
                     location=[load_lat, load_lon],
                     popup=f"Load Location {i + 1}: {row['Load_Coord']}",
                     icon=folium.Icon(color="green")
                 ).add_to(st.session_state.map)
 
-                # Add Delivery marker
+
                 folium.Marker(
                     location=[del_lat, del_lon],
                     popup=f"Delivery Location {i + 1}: {row['Del_Coord']}",
@@ -255,7 +252,7 @@ class Consolidation:
 
         df_usecase1['Date'] = pd.to_datetime(df_usecase1['Actual Load Date'])
 
-        useful_cols = ['Delivery Week','Tradeline','Order ID', 'Pallet Qty', 'Pallet Unit - Final', 'Temp Control?', 'Final Price', 'Load Point Name', 'Delivery Point Name', 'Load Country', 'Delivery County', 'Trade Lane',  'Load_full_add', 'Delivery_full_add', 'Distance_km', 'Load_lat', 'Load_lon', 'Delivery_lat', 'Delivery_lon','Delivery Lane']
+        useful_cols = ['Delivery Year','Delivery Month','Delivery Week','Tradeline','Order ID', 'Pallet Qty', 'Pallet Unit - Final', 'Temp Control?', 'Final Price', 'Load Point Name', 'Delivery Point Name', 'Load Country', 'Delivery County', 'Trade Lane',  'Load_full_add', 'Delivery_full_add', 'Distance_km', 'Load_lat', 'Load_lon', 'Delivery_lat', 'Delivery_lon','Delivery Lane']
         return df_usecase1[useful_cols]
 
     def calculate_distance(self, row, ib_lat, ib_lon):
@@ -265,14 +262,25 @@ class Consolidation:
         distance_in_km = result['rows'][0]['elements'][0]['distance']['value'] / 1000  # Convert meters to km
         return distance_in_km
 
-    def agg_data(self, df_usecase1, custom_location, location_address, ib_lat=0, ib_lon=0):
-        agg_df = df_usecase1.groupby(['Delivery Week', 'Pallet Unit - Final', 'Temp Control?', 'Load_full_add', 'Delivery_full_add', 'Distance_km', 'Load_lat', 'Load_lon', 'Delivery_lat', 'Delivery_lon','Load Country','Delivery County','Delivery Lane']).agg({
+    def agg_data(self, df_usecase1,del_freq, custom_location, location_address, ib_lat, ib_lon,auto_run):
+        if del_freq=='Weekly':
+            freq='Delivery Week'
+        else:
+            freq = 'Delivery Month'
+        agg_df = df_usecase1.groupby(['Delivery Year',freq, 'Pallet Unit - Final', 'Temp Control?', 'Load_full_add', 'Delivery_full_add', 'Distance_km', 'Load_lat', 'Load_lon', 'Delivery_lat', 'Delivery_lon','Load Country','Delivery County','Delivery Lane']).agg({
             'Pallet Qty': 'sum', 'Final Price': 'sum', 'Order ID': pd.Series.nunique
         }).reset_index()
+
+        df_man = agg_df.groupby(['Load_full_add'])['Pallet Qty'].sum().reset_index().sort_values(by='Pallet Qty',ascending=False)
+        best_location_address = df_man['Load_full_add'].values[0]
+
+        if auto_run:
+            location_address=best_location_address
 
         ob_lat, ob_lon = agg_df['Delivery_lat'].values[0], agg_df['Delivery_lon'].values[0]
 
         if not custom_location:
+
             ib_lat = agg_df[agg_df['Load_full_add'] == location_address]['Load_lat'].values[0]
             ib_lon = agg_df[agg_df['Load_full_add'] == location_address]['Load_lon'].values[0]
             ob_dist = agg_df[agg_df['Load_full_add'] == location_address]['Distance_km'].values[0]
@@ -291,10 +299,10 @@ class Consolidation:
         agg_df['Distance_km_ib'] = [100 for i in range(len(agg_df))] #RANDOM 
 
         inbound_df = agg_df.groupby(['Load_full_add', 'Load_lat', 'Load_lon', 'ib_lat', 'ib_lon', 'Distance_km_ib']).sum().reset_index()
-        storage_df = agg_df.groupby(['Delivery Week', 'Pallet Unit - Final', 'Temp Control?', 'Load_full_add', 'Load_lat', 'Load_lon', 'ib_lat', 'ib_lon']).sum().reset_index()
-        outbound_df = agg_df.groupby(['Delivery Week', 'Pallet Unit - Final', 'Temp Control?', 'ib_lat', 'ib_lon', 'Delivery_full_add', 'Delivery_lat', 'Delivery_lon', 'Distance_km_ob','Delivery County','Load Country','Delivery Lane'])[['Pallet Qty','Final Price','Order ID']].sum().reset_index()
+        storage_df = agg_df.groupby(['Delivery Year',freq, 'Pallet Unit - Final', 'Temp Control?', 'Load_full_add', 'Load_lat', 'Load_lon', 'ib_lat', 'ib_lon']).sum().reset_index()
+        outbound_df = agg_df.groupby(['Delivery Year',freq, 'Pallet Unit - Final', 'Temp Control?', 'ib_lat', 'ib_lon', 'Delivery_full_add', 'Delivery_lat', 'Delivery_lon', 'Distance_km_ob','Delivery County','Load Country','Delivery Lane'])[['Pallet Qty','Final Price','Order ID']].sum().reset_index()
         #outbound_df = agg_df.groupby(['Delivery Week', 'Pallet Unit - Final', 'Temp Control?','ib_lat','ib_lon','Delivery_full_add','Delivery_lat','Delivery_lon','Distance_km_ob'])
-        return inbound_df, storage_df, outbound_df, agg_df['Final Price'].sum()
+        return inbound_df, storage_df, outbound_df, agg_df['Final Price'].sum(),best_location_address
     
 
     def avg_ship_rates(self, unit,custom_location,location_address,df_clean):
@@ -336,6 +344,7 @@ class Consolidation:
             inbound_df['cost_per_ship']
         )
         inbound_df['Inbound Cost'] = inbound_df['cost_per_ship'] * inbound_df['Order ID']
+
         return inbound_df['Inbound Cost'].sum()
 
     def get_storage_cost(self, storage_df, handling_cost, storage_cost):
@@ -350,19 +359,23 @@ class Consolidation:
         return storage_df['Total Cost'].sum()
 
     def get_outbound_cost(self, outbound_df, per_order_ob_rate, max_qty):
-        print(per_order_ob_rate)
+
         outbound_df['No of Trucks'] = np.ceil(outbound_df['Pallet Qty'] / max_qty)
-        print(outbound_df['No of Trucks'].sum(),outbound_df['Pallet Qty'].sum())
         outbound_df = outbound_df.merge(per_order_ob_rate,on=['Load Country','Delivery Lane'],how='left')
         outbound_df['Outbound Cost'] = outbound_df['No of Trucks'] * outbound_df['Rate']
         outbound_df.to_csv("OB-CHECK1.csv")
         return outbound_df['Outbound Cost'].sum()
 
-    def run_consolidation(self, custom_location, location_address,ib_lat,ib_lon,unit,handling_rate,storage_rate,max_qty):
+    def run_consolidation(self, custom_location, location_address,ib_lat,ib_lon,unit,handling_rate,storage_rate,max_qty,del_freq,auto_run=False):
         df_clean = self.get_clean_data()
-        ib, sto, ob, existing_cost = self.agg_data(df_clean, custom_location, location_address,ib_lat,ib_lon)
-        ib_rate, ob_rate = self.avg_ship_rates(unit,custom_location,location_address,df_clean)
+        ib, sto, ob, existing_cost,best_loc = self.agg_data(df_clean,del_freq, custom_location, location_address,ib_lat,ib_lon,auto_run)
+        if auto_run:
+            ib_rate, ob_rate = self.avg_ship_rates(unit,custom_location,best_loc,df_clean)
+        else:
+            ib_rate, ob_rate = self.avg_ship_rates(unit,custom_location,location_address,df_clean)
         ib_cost = self.get_inbound_cost(ib, ib_rate)
+        if del_freq=='Monthly':
+            storage_rate = storage_rate*4
         sto_cost = self.get_storage_cost(sto, handling_rate, storage_rate)
         ob_cost = self.get_outbound_cost(ob, ob_rate, max_qty)
         return int(ib_cost), int(sto_cost), int(ob_cost) , int(existing_cost)
@@ -460,10 +473,17 @@ def main():
         ib_lon = 0.0  # Example longitude (can be replaced)
         location_address = 'NA'
         # Custom location selection logic
+        del_freq = st.sidebar.selectbox("Select Delivery Frequency", ['Weekly','Monthly'])
 
+        
+        delivery_country_arr = df[df['Load Country'] == load_country]['Delivery County'].unique().tolist()
+        del_country = st.sidebar.multiselect("Select Delivery Countries", ['ALL']+delivery_country_arr, default=['ALL'],help="Use the search bar to find countries")
+        if 'ALL' in del_country or len(del_country)==0:
+            del_country = list(delivery_country_arr)
         # unit = st.sidebar.selectbox("Select Pallet Unit", ['EUR', 'IND', 'ALL'])
         unit = 'ALL'
         # Additional parameters
+        loc_arr = dist_data[(dist_data['Load Country'] == load_country) & (dist_data['Delivery County'].isin(del_country))]['Load_full_add'].unique().tolist()
         custom_location_check = st.sidebar.checkbox("Use Custom Consolidation Point")
         if custom_location_check:
             trandeline_map = dist_data[(dist_data['Load Country'] == load_country)]
@@ -475,28 +495,9 @@ def main():
             st.sidebar.write(f"**Selected Lon:** {ib_lon}")
             custom_location = True
         else:
-            loc_arr = dist_data[(dist_data['Load Country'] == load_country)]['Load_full_add'].unique().tolist()
             location_address = st.sidebar.selectbox("Select Consolidation Address", loc_arr)
             custom_location = False
-        
-        delivery_country_arr = df[df['Load Country'] == load_country]['Delivery County'].unique().tolist()
-        del_country = st.sidebar.multiselect("Select Delivery Countries", ['ALL']+delivery_country_arr, default=['ALL'],help="Use the search bar to find countries")
-        if 'ALL' in del_country or len(del_country)==0:
-            del_country = list(delivery_country_arr)
 
-        # del_country = []
-
-        # # Create a checkbox for 'ALL' selection
-        # select_all = st.sidebar.checkbox('Select All Delivery Countries', value=False)
-
-        # # Checkbox grid for delivery countries
-        # for country in delivery_country_arr:
-        #     if select_all or st.sidebar.checkbox(country):
-        #         del_country.append(country)
-
-        # # Logic to handle selections
-        # if select_all:
-        #     del_country = delivery_country_arr  # Select all countries if 'ALL' is checked
 
     
 
@@ -504,10 +505,10 @@ def main():
 
 
         with col1:
-            handling_rate = st.number_input("Handling Rate", value=5.0)
+            handling_rate = st.number_input("Handling Rate per Week", value=5.0)
 
         with col2:
-            storage_rate = st.number_input("Storage Rate", value=2.5)
+            storage_rate = st.number_input("Storage Rate per Week", value=2.5)
 
         with col3:
             max_qty = st.number_input("Truck Max Qty", value=66)
@@ -519,7 +520,7 @@ def main():
         consolidator = Consolidation(df, rate_df, dist_data, load_country, del_country, api_key)
 
 
-        ib_cost, sto_cost, ob_cost, existing_cost = consolidator.run_consolidation(custom_location, location_address, ib_lat, ib_lon, unit, handling_rate, storage_rate, max_qty)
+        ib_cost, sto_cost, ob_cost, existing_cost = consolidator.run_consolidation(custom_location, location_address, ib_lat, ib_lon, unit, handling_rate, storage_rate, max_qty,del_freq,auto_run=False)
 
 
         cost_data = {
@@ -563,12 +564,97 @@ def main():
         with a_col:
             st.dataframe(cost_df.set_index(cost_df.columns[0]),width=300)
         
+        load_add = df['Load Address'].unique().tolist()
+        trandeline_map = dist_data[(dist_data['Load Country'] == load_country) & (dist_data['Delivery County'].isin(del_country))]
+        trandeline_map = trandeline_map[trandeline_map['Load Address'].isin(load_add)]
+        map_df = trandeline_map[['Load_full_add', 'Delivery_full_add', 'Load_Coord', 'Del_Coord']].drop_duplicates()
+
+            # Plot the delivery map
+        map_df_new = map_df.copy()
+        if custom_location:
+            map_df_new['Load_full_add'] = 'Customer Location'
+            map_df_new['Load_Coord'] = ["(" + str(ib_lat) + "," + str(ib_lon)+")" for i in range(len(map_df_new))]
+        else:
+            map_df_new['Load_full_add'] = location_address
+            coords = dist_data[dist_data['Load_full_add']==location_address]['Load_Coord'].values[0]
+            map_df_new['Load_Coord'] = coords
+
+        col_map1,col_map2 = st.columns(2)
+        with col_map1:
+            st.subheader("Current Scenario")
+            fig1 = plot_delivery_map(map_df)
+            st.plotly_chart(fig1)
+        with col_map2:
+            st.subheader("Post Consolidation Scenario")
+            fig2 = plot_delivery_map(map_df_new)
+            st.plotly_chart(fig2)
+        
+
+        combined_countries_df = pd.DataFrame()
+        ar_co = []
+        ar_ec = []
+        ar_nc =[]
+        for country in delivery_country_arr:
+            consolidator2 = Consolidation(df, rate_df, dist_data, load_country, [country], api_key)
+            ib_cost_2, sto_cost_2, ob_cost_2, existing_cost_2 = consolidator2.run_consolidation(custom_location, location_address, ib_lat, ib_lon, unit, handling_rate, storage_rate, max_qty,del_freq,auto_run=True)
+            ar_co.append(country)
+            ar_ec.append(existing_cost_2)
+            ar_nc.append(ib_cost_2+ob_cost_2+sto_cost_2)
+        
+        st.subheader("Country-Level Performance Analysis")
+
+        combined_countries_df = pd.DataFrame({
+            'Country': ar_co,
+            'Existing Cost': ar_ec,
+            'Cost After Consolidation': ar_nc
+        })
+
+        combined_countries_df = combined_countries_df.round(2)
+
+        # Calculate Savings/Loss
+        combined_countries_df['Savings/Loss'] = combined_countries_df['Existing Cost'] - combined_countries_df['Cost After Consolidation']
+        combined_countries_df.sort_values(by='Savings/Loss', ascending=False, inplace=True)
+        combined_countries_df.set_index('Country', inplace=True)
+
+        # Function to apply conditional formatting
+        def highlight_savings_loss(value):
+            if value > 0:
+                return 'color: green; font-weight: bold;'  # Savings
+            elif value < 0:
+                return 'color: red; font-weight: bold;'  # Loss
+            else:
+                return ''  # No change
+
+        # Apply formatting to the Savings/Loss column
+        styled_df = combined_countries_df.style.applymap(
+            highlight_savings_loss, subset=['Savings/Loss']
+        ).format({
+            'Existing Cost': '€{:,}',  # Format to currency with 2 decimal places
+            'Cost After Consolidation': '€{:,}',  # Format to currency with 2 decimal places
+            'Savings/Loss': '€{:,}'  # Format to currency with 2 decimal places
+        }).set_table_attributes('style="width: 100%; border-collapse: collapse;"') \
+        .set_properties(**{'text-align': 'right'})  # Align text to the right
+
+        # Set the background color for the header
+        styled_df.set_table_styles({
+                '': [{'selector': 'th', 'props': [('background-color', '#f2f2f2'), ('font-weight', 'bold'), ('text-align', 'center')]}],
+                '': [{'selector': 'td', 'props': [('text-align', 'right')]}]
+            })
+        
+
+        # Display the DataFrame in Streamlit
+        st.dataframe(styled_df, width=1000)
+        
+
+
+
+        
 
 
         #-------------INTERACTIVE MAP---------------
         
-        # print(map_output)
-        # print(lat,lon)
+
+
     
     if page == 'Analysis':
         # Sidebar setup
@@ -620,9 +706,14 @@ def main():
         # with col1:
         st.subheader("Filtered Tradelines Data")
         # html_table = df2.to_html(index=False)
-        
-        data_ = df2[['Delivery County','Load Address','Delivery Address','Pallet Qty','# Shipments','Utilization %']]
-        data_2 = df2[['Load Point Name','Company Name']]
+
+        delivery_country_arr = df2['Delivery County'].unique().tolist()
+        del_country = st.sidebar.multiselect("Select Delivery Countries", ['ALL']+delivery_country_arr, default=['ALL'],help="Use the search bar to find countries")
+        if 'ALL' in del_country or len(del_country)==0:
+            del_country = list(delivery_country_arr)
+        data_ = df2[df2['Delivery County'].isin(del_country)]
+        data_ = data_[['Delivery County','Load Address','Delivery Address','Pallet Qty','# Shipments','Utilization %']]
+        # data_2 = data_[['Load Point Name','Company Name']]
         html_table = data_.to_html(index=False)
         # st.write(html_table, unsafe_allow_html=True)
         st.dataframe(data_.set_index(data_.columns[0]),width=800)
@@ -632,22 +723,22 @@ def main():
 
         # with col2:
         st.subheader("Tradelines")
-        col_button,col_map = st.columns([1,5])
+        # col_button,col_map = st.columns([1,5])
 
-        with col_button:
-            delivery_country_arr = df[df['Load Country'] == load_country]['Delivery County'].unique().tolist()
-            del_country = st.selectbox("Select Delivery Country", ['ALL']+delivery_country_arr)
-        with col_map:
-            if del_country!='ALL':
-                trandeline_map = dist_data[(dist_data['Load Country'] == load_country) & (dist_data['Delivery County'] == del_country)]
-            else:
-                trandeline_map = dist_data[(dist_data['Load Country'] == load_country)]
-            trandeline_map = trandeline_map[trandeline_map['Load Address'].isin(load_add)]
-            map_df = trandeline_map[['Load_full_add', 'Delivery_full_add', 'Load_Coord', 'Del_Coord']].drop_duplicates()
+        # with col_button:
+        # delivery_country_arr = df[df['Load Country'] == load_country]['Delivery County'].unique().tolist()
+        # del_country = st.selectbox("Select Delivery Country", ['ALL']+delivery_country_arr)
+        # with col_map:
+            # if del_country!='ALL':
+        trandeline_map = dist_data[(dist_data['Load Country'] == load_country) & (dist_data['Delivery County'].isin(del_country))]
+            # else:
+        # trandeline_map = dist_data[(dist_data['Load Country'] == load_country)]
+        trandeline_map = trandeline_map[trandeline_map['Load Address'].isin(load_add)]
+        map_df = trandeline_map[['Load_full_add', 'Delivery_full_add', 'Load_Coord', 'Del_Coord']].drop_duplicates()
 
             # Plot the delivery map
-            fig1 = plot_delivery_map(map_df)
-            st.plotly_chart(fig1)
+        fig1 = plot_delivery_map(map_df)
+        st.plotly_chart(fig1)
             
             # Display the second dataframe with a smaller width and height
             
